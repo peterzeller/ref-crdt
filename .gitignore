@@ -1,0 +1,6 @@
+output/
+target/
+refcrdt-quickcheck/srcgen/
+*#
+*.o
+*.hi
