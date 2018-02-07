@@ -1,22 +1,28 @@
 {-# LANGUAGE StandaloneDeriving, GeneralizedNewtypeDeriving #-}
 module Ref_quickcheck(tests) where
 import Test.QuickCheck
+import qualified Test.QuickCheck.Property as Property
 import Ref_crdt
 import Set(Set(Set,Coset))
 import qualified Arith
 import qualified Finite_Map
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Data.Map.Strict((!?),Map)
 import Data.Maybe(mapMaybe)
 import Debug.Trace
+import Data.List(elemIndices,(!!))
 
 deriving instance Show Operation
 instance Show Inref where
     show (D_inref (Arith.Int_of_integer n)) = "ir" ++ show n
 instance Show Ref where
     show (D_ref (Arith.Int_of_integer n)) = "r" ++ show n
-deriving instance Show AntidoteKey
+instance Show AntidoteKey where
+    show (D_antidoteKey i) = "k" ++ show i
 deriving instance Show a => Show (Set a)
+
+deriving instance Show Operation_effector
 
 instance Show Arith.Nat where
     show x = show $ Arith.integer_of_nat x
@@ -117,6 +123,34 @@ instance Arbitrary Operation where
 --     Reset_inref Inref
 --     Reset_ref Ref
 
+instance Show Snapshot where
+    show (Snapshot x) = show x
+
+instance Show (State_ext a) where
+    show s = "refs = " ++ show (state_refs s) ++ ", inrefs = " ++ show (state_inrefs s)
+
+instance Show (Inref_state_ext a) where
+    show s = "inref(" ++ show (inref_object_key s)
+        ++ ", " ++ show (rev_refs s)
+        ++ ", " ++ show (inUse s) ++ ")"
+
+instance Show (Ref_state_ext a) where
+    show s = "inref(" ++ show (object_key s)
+        ++ ", " ++ show (dest_keys s) ++ ")"
+
+instance (Show k, Show v) => Show (Finite_Map.Fmap k v) where
+    show (Finite_Map.Fmap_of_list l) = show l
+
+instance Show (Execution_ext a) where
+    show e = "execution: \n" ++ concatMap printEvent (fmap_to_list (events e)) ++ "end\n"
+        where
+            printEvent (e,info) = show e
+                ++ "  op       : " ++ show (event_operation info) ++ "\n"
+                ++ "  pre      : " ++ show (event_state_pre info) ++ "\n"
+                ++ "  post     : " ++ show (event_state_post info) ++ "\n"
+                ++ "  snapshot : " ++ show (event_snapshot info) ++ "\n"
+                ++ "  effectors: " ++ show (event_effectors info) ++ "\n"
+
 data Opr = Opr Operation [(Event, Arith.Nat)]
 
 instance Show Opr where
@@ -135,8 +169,9 @@ instance Arbitrary Opr where
 
     shrink (Opr o xs) = map (Opr o) (shrinkList shrinkDep xs)
         where
-            shrinkDep (e, z) = [(e, Arith.nat_of_integer $ Arith.integer_of_nat z `div` 2),
-                                (e, Arith.nat_of_integer $ Arith.integer_of_nat z - 1)]
+            shrinkDep (e, z) = if Arith.integer_of_nat z <= 0 then []
+                else [(e, Arith.nat_of_integer $ Arith.integer_of_nat z `div` 2),
+                      (e, Arith.nat_of_integer $ Arith.integer_of_nat z - 1)]
 
 
 
@@ -146,6 +181,8 @@ data OprList = OprList [Opr]
 instance Show OprList where
     show (OprList xs) = (concatMap (\(i,o) -> "  e" ++ show i ++ "  " ++ show o ++ "\n") (zip [0..] xs)) ++ "\n----end--"
 
+removeDuplicates [] = []
+removeDuplicates ((k,v):rest) = (k,v) : removeDuplicates (filter (\(k',v') -> k' /= k) rest)
 
 gen_opr :: Int -> Gen Opr
 gen_opr 0 = do
@@ -161,7 +198,7 @@ gen_opr n = do
     let b = D_event $ Arith.Int_of_integer $ (b' `mod` toInteger n)
     bn' <- arbitrary
     let bn = Arith.nat_of_integer (bn' `mod` 3)
-    return $ Opr o [(a,an),(b,bn)]
+    return $ Opr o (removeDuplicates [(a,an),(b,bn)])
 
 gen_oprlist :: Int -> Gen [Opr]
 gen_oprlist 0 = return $ []
@@ -170,7 +207,7 @@ gen_oprlist n = do
     opr <- gen_opr (length start)
     return (opr:start)
 
-
+event_num (D_event i) = fromInteger $ Arith.integer_of_int i
 
 instance Arbitrary OprList where
 
@@ -191,12 +228,14 @@ instance Arbitrary OprList where
                     m = Map.fromList (zip newInts [0..])
                     filterOp (e, Opr o deps) =
                         if Map.member e m then
-                            Just $ Opr o (mapMaybe renameDep deps)
+                            Just $ Opr o (removeDuplicates (concatMap renameDep deps))
                         else
                             Nothing
                     renameDep (e,i) = case m !? event_to_int e of
-                        Nothing -> Nothing
-                        Just a -> Just (int_to_event a, i)
+                        Nothing ->
+                            let Opr o2 deps2 = xs !! event_num e in
+                                (concatMap renameDep deps2)
+                        Just a -> [(int_to_event a, i)]
 
 make_transactional l = map (\(e,i) -> (e,100)) l
 
@@ -208,7 +247,27 @@ from_opr (Opr o l) =
 
 from_opr_list (OprList ops) = (map from_opr ops)
 
-tests = quickCheckWith stdArgs { maxSuccess = 500000 } $
+result :: String -> [Bool] -> Property.Result
+result message prop = Property.MkResult
+    {   Property.ok            = Just (and prop)
+      , Property.expect        = True
+      , Property.reason        = "failed property " ++ show (elemIndices False prop) ++ "\n" ++ message
+      , Property.theException  = Nothing
+      , Property.abort         = True
+      , Property.maybeNumTests = Nothing
+      , Property.labels        = Map.empty
+      , Property.stamp         = Set.empty
+      , Property.callbacks     = []
+      , Property.testCase      = []
+      }
+
+tests = quickCheckWith stdArgs { maxSuccess = 50000 } $
   (\ops ->
     let ops2 = take 20 (from_opr_list ops) in
-    invariant2 (execution_run2 ops2))
+    let exec = execution_run2 ops2 in
+    result ("execution = " ++ show exec) [
+        invariant1 exec,
+        invariant2 exec,
+        invariant3 exec,
+        invariant4 exec
+    ])

@@ -495,13 +495,13 @@ definition effector_impl :: "effector_function" where
       s_update_ref ref (\<lambda>s. s\<lparr>dest_keys := insert (antidoteKey,uid) (Set.filter (\<lambda>(x,u). u\<noteq>uid \<and> u\<notin>oldUids) (dest_keys s)) \<rparr>) S
 "
 
-definition ref_reset :: "ref \<Rightarrow> inref option \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
-"ref_reset ref ignoredInref uid state  \<equiv> exec {
+(** broken version 
+definition ref_reset_targets :: "ref \<Rightarrow> inref option \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
+"ref_reset_targets ref ignoredInref uid state  \<equiv> exec {
         let (outkeys :: (inref option\<times>uid) set) = (dest_keys (ref_state state ref));
-        ref_dest_keys_assign ref None uid state;
         set_forEachS outkeys True (\<lambda>(target,uid) first_time. 
           case target of 
-              None \<Rightarrow> return True
+              None \<Rightarrow> return first_time
             | Some target' => exec {
                   (if \<not> (target = ignoredInref \<and> first_time) then exec {
                     inref_rev_refs_remove target' ref uid;
@@ -513,7 +513,23 @@ definition ref_reset :: "ref \<Rightarrow> inref option \<Rightarrow> uid \<Righ
                   })
               })
       }"
+**)
 
+definition ref_reset_targets :: "ref \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
+"ref_reset_targets ref uid state  \<equiv> exec {
+        let (outkeys :: (inref option\<times>uid) set) = (dest_keys (ref_state state ref));
+        set_forEach outkeys (\<lambda>(target,uid). 
+          case target of 
+              None \<Rightarrow> skip
+            | Some target' => inref_rev_refs_remove target' ref uid
+            )
+      }"
+
+definition ref_reset :: "ref \<Rightarrow> inref option \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
+"ref_reset ref ignoredInref uid state  \<equiv> exec {
+        ref_dest_keys_assign ref None uid state;
+        ref_reset_targets ref uid state
+      }"
 
 definition outref_update :: "ref \<Rightarrow> inref option \<Rightarrow> state \<Rightarrow> uid \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where
 "outref_update ref inref state uid \<equiv> exec {
@@ -523,8 +539,8 @@ definition outref_update :: "ref \<Rightarrow> inref option \<Rightarrow> state 
    | Some inref \<Rightarrow> inref_rev_refs_add inref ref uid);
   (* then: assign source *)
   ref_dest_keys_assign ref inref uid state;
-  (* then reset: remove from all old targets *)
-  ref_reset ref inref uid state
+  (* then reset targets: remove from all old targets *)
+  ref_reset_targets ref uid state
 }"
 
 definition generator_impl :: generator_function where
@@ -658,7 +674,8 @@ definition forallEvents :: "execution \<Rightarrow> (event \<Rightarrow> eventIn
 definition forallStates :: "execution \<Rightarrow> (state \<Rightarrow> bool) \<Rightarrow> bool" where
 "forallStates E P \<equiv> forallEvents E (\<lambda>e eInfo. P (event_state_pre eInfo) \<and> P (event_state_post eInfo))"
 
-find_consts name: "two"
+
+subsection {* Invariants *}
 
 (* if ref exists, inref exists *)
 definition invariant1 :: "execution \<Rightarrow> bool" where
@@ -678,6 +695,9 @@ definition invariant2 :: "execution \<Rightarrow> bool" where
           | None \<Rightarrow> False
     )))"
 
+(* if there is a reverse reference, then there is also a forward reference
+(only true, if using transactional semantics )
+ *)
 definition invariant3 :: "execution \<Rightarrow> bool" where
 "invariant3 E \<equiv> 
 forallStates E (\<lambda>S. 
@@ -689,16 +709,17 @@ forallStates E (\<lambda>S.
 )
 "
 
-
+(* some simple postconditions for operations*)
 definition invariant4 :: "execution \<Rightarrow> bool" where
 "invariant4 E \<equiv> 
-forallStates E (\<lambda>S. 
-  \<forall>(inref,inrefState)\<in>fmap_entries (state_inrefs S).  
-   \<forall>(r,u)\<in>two_phase_set_get (rev_refs inrefState). 
-    case state_refs S.[r] of
-         None \<Rightarrow> False
-       | Some rstate \<Rightarrow> (Some inref,u)\<in> dest_keys rstate
-)
+\<forall>(e,eInfo)\<in>events' E. 
+case event_operation eInfo of
+    init x y \<Rightarrow> 
+      (let S = event_state_post eInfo in
+      case state_refs S.[x] of
+        None \<Rightarrow> False
+        | Some rstate \<Rightarrow> Some y\<in>fst`dest_keys rstate)
+  | _ \<Rightarrow> True
 "
 
 export_code wf_correct_execution_lists in Haskell
@@ -723,9 +744,21 @@ end
 
 definition "execution_run2 ops \<equiv> execution_run (map transformOp ops)"
 
+
+definition fmap_key_list where
+"fmap_key_list m \<equiv> sorted_list_of_set2 (fmdom' m)"
+
+definition fmap_to_list where
+"fmap_to_list m \<equiv> map (\<lambda>k. (k,m![k])) (fmap_key_list m)"
+
+
 export_code sorted_list_of_set2 execution_run2 invariant1 invariant2 invariant3 invariant4
  init assign deref may_delete reset_inref reset_ref D_event D_inref D_ref D_antidoteKey 
 integer_of_nat int_of_integer integer_of_nat nat_of_integer fmap_of_list D_event integer_of_int
+events event_operation event_result event_effectors event_executionOrder event_state_pre event_state_post event_snapshot 
+fmlookup fmap_key_list fmap_to_list Snapshot state_refs state_inrefs 
+object_key  dest_keys inref_object_key  rev_refs  inUse
+effector_inref_inuse_enable effector_inref_rev_refs_add effector_inref_rev_refs_rem effector_ref_dest_keys_assign
 in Haskell  (*module_name Ref_crdt*) file "refcrdt-quickcheck/srcgen"
 
 typedef operations = "UNIV :: (trace_event list) set"
@@ -737,9 +770,6 @@ fun cleanRef where
 fun cleanInef where
 "cleanInef (D_inref n) = D_inref 0"
 
-find_consts "('k,'v) fmap => ('k\<times>'v) list"
-definition fmap_to_list :: "('k::linorder,'v) fmap => ('k\<times>'v) list" where
-"fmap_to_list m \<equiv> sorted_list_of_set (fmdom' m) |> map (\<lambda>k. (k, k |> fmlookup m |> the))"
 
 fun cleanOperations :: "trace_event list \<Rightarrow> nat \<Rightarrow> trace_event list" where
   "cleanOperations [] n = []"
@@ -769,18 +799,39 @@ lemma "let E = execution_run (cleanOperations ops 0) in invariant2 E"
   oops
 *)
 
-abbreviation "x \<equiv> D_ref 1"
-abbreviation "y \<equiv> D_ref 2"
+abbreviation "r1 \<equiv> D_ref 1"
+abbreviation "r2 \<equiv> D_ref 2"
+abbreviation "r3 \<equiv> D_ref 2"
 
-abbreviation "a \<equiv> D_inref 3"
-abbreviation "b \<equiv> D_inref 4"
+abbreviation "ir1 \<equiv> D_inref 1"
+abbreviation "ir2 \<equiv> D_inref 2"
 
 abbreviation "e i \<equiv> D_event i"
 
 value "let ops = [
-        (init x a, fmap_of_list []),
-        (init x b, fmap_of_list [(e 0, 10)])
+        (init r1 ir2       , fmap_of_list []),
+          (init r2 ir1       , fmap_of_list [(e 0,1)]),
+          (may_delete ir1 [] , fmap_of_list [(e 1,1),(e 0,2)]),
+          (reset_ref r1      , fmap_of_list [(e 0,0),(e 1,1)]),
+          (reset_ref r2      , fmap_of_list [(e 0,0),(e 1,1),(e 3,1)]),
+          (assign r2 r1      , fmap_of_list [(e 1,0),(e 0,1)]),
+          (may_delete ir1 [] , fmap_of_list [(e 0,0),(e 1,1),(e 3,1),(e 5,2)])
    ]; 
-   E = execution_run (map transformOp ops) in (invariant4 E, E)"
+   E = execution_run (map transformOp ops) ;
+   ev = e 4;
+   eInfo = the (fmlookup (events E) ev);
+   e' = e 6;
+   eInfo' = the (fmlookup (events E) e');
+  inv = (
+  \<forall>(inref,inrefState)\<in>fmap_entries (state_inrefs (event_state_pre eInfo)). 
+ two_phase_set_get (rev_refs inrefState) = {}
+   \<and> stable ev E
+  \<longrightarrow> ( (ev,e')\<in>happensBefore E \<longrightarrow> 
+        (case (state_inrefs (event_state_post eInfo')).[inref] of
+            Some inrefState' \<Rightarrow> two_phase_set_get (rev_refs inrefState') = {}
+          | None \<Rightarrow> False
+    )))
+   
+  in (inv, invariant2 E, E)"
 
 end
