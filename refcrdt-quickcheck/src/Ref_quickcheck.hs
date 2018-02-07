@@ -12,6 +12,7 @@ import Data.Map.Strict((!?),Map)
 import Data.Maybe(mapMaybe)
 import Debug.Trace
 import Data.List(elemIndices,(!!))
+import Data.Char(toLower)
 
 deriving instance Show Operation
 instance Show Inref where
@@ -153,8 +154,11 @@ instance Show (Execution_ext a) where
 
 data Opr = Opr Operation [(Event, Arith.Nat)]
 
+toFirstLower "" = ""
+toFirstLower (x:xs) = toLower x : xs
+
 instance Show Opr where
-    show (Opr opr l) = show opr ++ " " ++ show l
+    show (Opr opr l) = "(" ++ toFirstLower (show opr) ++ ", fmap_of_list " ++ show l ++ ")"
 
 instance Arbitrary Opr where
     arbitrary = do
@@ -179,7 +183,7 @@ instance Arbitrary Opr where
 data OprList = OprList [Opr]
 
 instance Show OprList where
-    show (OprList xs) = (concatMap (\(i,o) -> "  e" ++ show i ++ "  " ++ show o ++ "\n") (zip [0..] xs)) ++ "\n----end--"
+    show (OprList xs) = (concatMap (\(i,o) -> " (* e" ++ show i ++ " *)  " ++ show o ++ "\n") (zip [0..] xs)) ++ "\n----end--"
 
 removeDuplicates [] = []
 removeDuplicates ((k,v):rest) = (k,v) : removeDuplicates (filter (\(k',v') -> k' /= k) rest)

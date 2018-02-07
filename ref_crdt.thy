@@ -323,8 +323,19 @@ events execution |> fmpred (\<lambda>e eInfo.  localPred (event_operation eInfo)
 definition 
 "closed_concurrent e hb E \<equiv> \<forall>e1\<in>E. e1\<noteq>e \<and> (e1, e)\<in>hb \<longrightarrow> (\<forall>e2\<in>E.(e1,e2)\<notin>hb \<and> (e2,e1)\<notin>hb \<longrightarrow> (e2, e)\<in>hb)"
 
+text {* Define that event e has received all effectors from its dependencies. *}
+definition 
+"fullSnapshot e E \<equiv> 
+  case (events E).[e] of 
+      None \<Rightarrow> False
+    | Some info \<Rightarrow> (\<forall>(e',n)\<in>snapshot_entries (event_snapshot info). 
+        case (events E).[e'] of
+            None \<Rightarrow> False
+          | Some info' \<Rightarrow> n \<ge> length (event_effectors info'))"
+
 definition
-"stable e E \<equiv> closed_concurrent e (happensBefore E) (fmdom' (events E))"
+"stable e E \<equiv> closed_concurrent e (happensBefore E) (fmdom' (events E))
+            \<and> fullSnapshot e E  "
 
 
 definition 
@@ -616,23 +627,25 @@ find_consts "('k, 'v) fmap"
 
 definition "numberEffectors E e \<equiv> e |> fmlookup (events E) |> the |> event_effectors |> length"
 
-definition execution_addStep :: "operation \<Rightarrow> (event,nat) fmap \<Rightarrow> execution \<Rightarrow> execution" where
-"execution_addStep opr preEventsN E \<equiv> 
+definition execution_addStep :: "int \<Rightarrow> operation \<Rightarrow> (event,nat) fmap \<Rightarrow> execution \<Rightarrow> execution" where
+"execution_addStep eId opr preEventsN E \<equiv> 
 let
-   e = D_event (int (card (fmdom' (events E))));
+   e = D_event eId;
    preEvents = fmdom' preEventsN;
    (* only existing events *) 
    deps1 :: event set = Set.filter (\<lambda>e. e\<in>fmdom' (events E)) preEvents;
    (* include parallel events which need to be stable *)
    deps2 = Set.filter (\<lambda>e. e\<in>deps1 \<or> (precondition_impl (event_operation ((events E)![e])) \<noteq> None \<and> (\<exists>e'\<in>deps1. (e',e)\<in>happensBefore E ) )) (fmdom' (events E));
    (* include causal dependencies *)
-   deps3 = downwards_closure deps2 E;
+   deps3 = downwards_closure deps2 E; (* TODO could be more precise; at the level of effectors instead of events*)
    (* include parallel events, if stable precondition check required *)
    deps = (if precondition_impl opr = None then deps3 else parallel_closure deps3 (fmdom' (events E)) (happensBefore E));
    snapshot = sorted_list_of_set2 deps 
                  |> map (\<lambda>e. (e, case preEventsN.[e] of 
                                   None \<Rightarrow> numberEffectors E e
-                                | Some n \<Rightarrow> if \<exists>e'\<in>deps. e\<in>snapshot_events (event_snapshot ((events E)![e'])) then numberEffectors E e else n
+                                | Some n \<Rightarrow> if precondition_impl opr \<noteq> None \<or>  (\<exists>e'\<in>deps. e\<in>snapshot_events (event_snapshot ((events E)![e']))) 
+                                            then numberEffectors E e 
+                                            else n
                              ))  
                  |> fmap_of_list
                  |> Snapshot ;
@@ -666,7 +679,7 @@ record trace_event =
   t_deps :: "(event,nat) fmap"
 
 definition execution_run :: "trace_event list \<Rightarrow> execution" where
-"execution_run ops \<equiv> fold (\<lambda>e E. execution_addStep (t_operation e) (t_deps e) E) ops emptyExecution "
+"execution_run ops \<equiv> snd (fold (\<lambda>e (n,E). (n+1, execution_addStep n (t_operation e) (t_deps e) E)) ops (0, emptyExecution))"
 
 definition forallEvents :: "execution \<Rightarrow> (event \<Rightarrow> eventInfo \<Rightarrow> bool) \<Rightarrow> bool" where
 "forallEvents E P \<equiv> events E |> fmpred P"
@@ -801,7 +814,7 @@ lemma "let E = execution_run (cleanOperations ops 0) in invariant2 E"
 
 abbreviation "r1 \<equiv> D_ref 1"
 abbreviation "r2 \<equiv> D_ref 2"
-abbreviation "r3 \<equiv> D_ref 2"
+abbreviation "r3 \<equiv> D_ref 3"
 
 abbreviation "ir1 \<equiv> D_inref 1"
 abbreviation "ir2 \<equiv> D_inref 2"
@@ -809,13 +822,13 @@ abbreviation "ir2 \<equiv> D_inref 2"
 abbreviation "e i \<equiv> D_event i"
 
 value "let ops = [
-        (init r1 ir2       , fmap_of_list []),
-          (init r2 ir1       , fmap_of_list [(e 0,1)]),
-          (may_delete ir1 [] , fmap_of_list [(e 1,1),(e 0,2)]),
-          (reset_ref r1      , fmap_of_list [(e 0,0),(e 1,1)]),
-          (reset_ref r2      , fmap_of_list [(e 0,0),(e 1,1),(e 3,1)]),
-          (assign r2 r1      , fmap_of_list [(e 1,0),(e 0,1)]),
-          (may_delete ir1 [] , fmap_of_list [(e 0,0),(e 1,1),(e 3,1),(e 5,2)])
+ (* e0 *)  (init r3 ir2, fmap_of_list []),
+ (* e1 *)  (reset_ref r2, fmap_of_list [(e 0,0)]),
+ (* e2 *)  (init r2 ir1, fmap_of_list [(e 0,1),(e 1,1)]),
+ (* e3 *)  (assign r3 r2, fmap_of_list [(e 0,1)]),
+ (* e4 *)  (reset_ref r1, fmap_of_list [(e 1,1),(e 0,1),(e 3,1)]),
+ (* e5 *)  (assign r2 r3, fmap_of_list [(e 0,1)]),
+ (* e6 *)  (may_delete ir1 [], fmap_of_list [(e 3,1),(e 1,0),(e 0,1)])
    ]; 
    E = execution_run (map transformOp ops) ;
    ev = e 4;
@@ -833,5 +846,7 @@ value "let ops = [
     )))
    
   in (inv, invariant2 E, E)"
+
+
 
 end
