@@ -6,13 +6,14 @@ theory ref_crdt
     "~~/src/HOL/Library/Code_Target_Numeral"
 begin
 
-
+(*<*)
 abbreviation lookupsyntax ("_ .[_]"[25,25]25) where
 "m.[x] \<equiv> fmlookup m x"
 
 abbreviation lookupsyntax2 ("_ ![_]"[25,25]25) where
 "m![x] \<equiv> the (fmlookup m x)"
 
+(*>*)
 
 section {* System model *}
 
@@ -372,7 +373,7 @@ term fmlookup
 find_consts "('a, 'b) fmap \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> 'b" 
 
 
-definition return :: "operation_result \<Rightarrow> operation_effector list \<Rightarrow> (operation_result \<times> operation_effector list)" where
+definition return :: "'a \<Rightarrow> operation_effector list \<Rightarrow> ('a \<times> operation_effector list)" where
 "return r l = (r,l)"
 
 definition skip :: "operation_effector list \<Rightarrow> operation_effector list" where
@@ -381,8 +382,16 @@ definition skip :: "operation_effector list \<Rightarrow> operation_effector lis
 definition forEach :: "'a list \<Rightarrow> ('a \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list) \<Rightarrow>operation_effector list \<Rightarrow> operation_effector list" where
 "forEach list f effs \<equiv> foldl (\<lambda>es x. f x es) effs list"
 
+text {* forEach loop with state:  *}
+
+definition forEachS :: "'a list \<Rightarrow> 'b \<Rightarrow> ('a \<Rightarrow> 'b \<Rightarrow> operation_effector list \<Rightarrow> ('b \<times> operation_effector list)) \<Rightarrow>operation_effector list \<Rightarrow> operation_effector list" where
+"forEachS list s f effs \<equiv> foldl (\<lambda>(s,es) x. f x s es) (s,effs) list |> snd"
+
 definition set_forEach :: "('a::linorder) set \<Rightarrow> ('a \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list) \<Rightarrow>operation_effector list \<Rightarrow> operation_effector list" where
 "set_forEach S \<equiv> forEach (sorted_list_of_set2 S)"
+
+definition set_forEachS :: "('a::linorder) set \<Rightarrow> 'b \<Rightarrow> ('a \<Rightarrow> 'b \<Rightarrow> operation_effector list \<Rightarrow> ('b \<times> operation_effector list)) \<Rightarrow>operation_effector list \<Rightarrow> operation_effector list" where
+"set_forEachS S \<equiv> forEachS (sorted_list_of_set2 S)"
 
 definition inref_inuse_enable :: "inref \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
 "inref_inuse_enable inref list = list@[effector_inref_inuse_enable inref]"
@@ -441,6 +450,9 @@ definition may_delete_check :: "state \<Rightarrow> inref \<Rightarrow> ref set 
    (*let last_keypairs :: (ref \<times> uid) set = \<Union> ((\<lambda>r. dest_keys (ref_state state r)) ` last_refs) in *)
    (fst ` two_phase_set_get (rev_refs (inref_state state inref))) = last_refs"
 
+subsection {* Implementation *}
+
+text {* We now present the implementation of the reference CRDT: *}
 
 definition precondition_impl :: "operation \<rightharpoonup> state \<Rightarrow> bool" where
 "precondition_impl opr \<equiv> case opr of 
@@ -483,47 +495,66 @@ definition effector_impl :: "effector_function" where
       s_update_ref ref (\<lambda>s. s\<lparr>dest_keys := insert (antidoteKey,uid) (Set.filter (\<lambda>(x,u). u\<noteq>uid \<and> u\<notin>oldUids) (dest_keys s)) \<rparr>) S
 "
 
-definition ref_reset :: "ref \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
-"ref_reset ref uid state  \<equiv> exec {
+definition ref_reset :: "ref \<Rightarrow> inref option \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
+"ref_reset ref ignoredInref uid state  \<equiv> exec {
         let (outkeys :: (inref option\<times>uid) set) = (dest_keys (ref_state state ref));
         ref_dest_keys_assign ref None uid state;
-        set_forEach outkeys (\<lambda>(target,uid). case target of None \<Rightarrow> skip | Some target => inref_rev_refs_remove target ref uid )
+        set_forEachS outkeys True (\<lambda>(target,uid) first_time. 
+          case target of 
+              None \<Rightarrow> return True
+            | Some target' => exec {
+                  (if \<not> (target = ignoredInref \<and> first_time) then exec {
+                    inref_rev_refs_remove target' ref uid;
+                    return first_time
+                  } else if target = ignoredInref then exec {
+                    return False
+                  } else exec {
+                    return first_time
+                  })
+              })
       }"
 
 
+definition outref_update :: "ref \<Rightarrow> inref option \<Rightarrow> state \<Rightarrow> uid \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where
+"outref_update ref inref state uid \<equiv> exec {
+  (* first insert into new target: *)
+  (case inref of
+     None \<Rightarrow> skip
+   | Some inref \<Rightarrow> inref_rev_refs_add inref ref uid);
+  (* then: assign source *)
+  ref_dest_keys_assign ref inref uid state;
+  (* then reset: remove from all old targets *)
+  ref_reset ref inref uid state
+}"
+
 definition generator_impl :: generator_function where
-"generator_impl opr uid state \<equiv> case opr of 
-    init ref inref \<Rightarrow> 
-      [] |> exec {
+"generator_impl opr uid state \<equiv> [] |> (case opr of 
+    init ref inref \<Rightarrow> exec {
         inref_inuse_enable inref;
-        inref_rev_refs_add inref ref uid;
-        ref_reset ref uid state;
-        ref_dest_keys_assign ref (Some inref) uid state;
+        outref_update ref (Some inref) state uid;
         return no_result
       }
-  | assign x y \<Rightarrow> 
-      [] |> exec {
-        ref_reset x uid state;
-        state2 <- (\<lambda>effs. (executeEffectors effs state effector_impl, effs));
-        let target_key = mv_reg_get1' (dest_keys (ref_state state2 y));
-        (case target_key of 
-            None \<Rightarrow> skip
-          | Some inref \<Rightarrow> inref_rev_refs_add inref x uid);
-        ref_dest_keys_assign x target_key uid state2;
+  | assign outTo outVal \<Rightarrow> exec {
+        let new_key = mv_reg_get1' (dest_keys (ref_state state outVal));
+        outref_update outTo new_key state uid;
         return no_result
       }
-  | deref ref \<Rightarrow> (* just returns nested keys, instead of performing updates on it ... *)
-      let inref :: inref option  = mv_reg_get1' (dest_keys (ref_state state ref));
-          key = (map_option (inref_get_object_key state) inref)
-      in (deref_result key, [])
-  | may_delete inref last_refs \<Rightarrow> 
-     (may_delete_result (may_delete_check state inref (set last_refs)), [])
-  | reset_inref inref \<Rightarrow> (no_result, [])
-  | reset_ref ref \<Rightarrow> 
-      [] |> exec {
-        ref_reset ref uid state;
+  | deref ref \<Rightarrow> exec {
+        let inref = mv_reg_get1' (dest_keys (ref_state state ref));
+        let key = (map_option (inref_get_object_key state) inref);
+        return (deref_result key)
+      }
+  | may_delete inref last_refs \<Rightarrow> exec {
+        return (may_delete_result (may_delete_check state inref (set last_refs)))
+      }
+  | reset_inref inref \<Rightarrow> exec {
         return no_result
       }
+  | reset_ref ref \<Rightarrow> exec {
+        outref_update ref None state uid;
+        return no_result
+      }
+)
 "
 
 
