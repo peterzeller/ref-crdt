@@ -272,6 +272,7 @@ tests = quickCheckWith stdArgs { maxSuccess = 50000 } $
     result ("execution = " ++ show exec) [
         invariant1 exec,
         invariant2 exec,
-        invariant3 exec,
-        invariant4 exec
+        (not transactional) || invariant3 exec,
+        invariant4 exec,
+        invariant5 exec
     ])

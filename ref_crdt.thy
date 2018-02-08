@@ -651,7 +651,7 @@ let
                  |> Snapshot ;
    precond = (precondition_impl opr orElse (\<lambda>x. True));
    execOrder = topSort (happensBefore E) (sorted_list_of_set2 deps); 
-   preState :: state = executeEffectors (List.maps (\<lambda>e. event_effectors ((events E)![e])) execOrder) initialState effector_impl
+   preState :: state = executeEffectors (List.maps (\<lambda>e. take (snapshot_num snapshot e) (event_effectors ((events E)![e]))) execOrder) initialState effector_impl
 in if \<not>(localPrecondition_impl opr preState \<and> precond preState) then
   E
 else
@@ -735,6 +735,24 @@ case event_operation eInfo of
   | _ \<Rightarrow> True
 "
 
+(* finally: if there is a reverse reference, then there is also a forward reference
+ *)
+definition invariant5 :: "execution \<Rightarrow> bool" where
+"invariant5 E \<equiv>   
+let 
+execution_order = sorted_list_of_set2 (fmdom' (events E));
+effectors = execution_order |> List.maps (\<lambda>e'.
+      case (events E).[e'] of Some eInfo' \<Rightarrow> event_effectors eInfo' | None \<Rightarrow> []);
+S = executeEffectors effectors initialState effector_impl
+  in
+  \<forall>(inref,inrefState)\<in>fmap_entries (state_inrefs S).  
+    \<forall>(r,u)\<in>two_phase_set_get (rev_refs inrefState). 
+      case state_refs S.[r] of
+         None \<Rightarrow> False
+       | Some rstate \<Rightarrow> (Some inref,u)\<in> dest_keys rstate
+"
+
+
 export_code wf_correct_execution_lists in Haskell
 export_code execution_run in Haskell
 
@@ -765,7 +783,8 @@ definition fmap_to_list where
 "fmap_to_list m \<equiv> map (\<lambda>k. (k,m![k])) (fmap_key_list m)"
 
 
-export_code sorted_list_of_set2 execution_run2 invariant1 invariant2 invariant3 invariant4
+export_code sorted_list_of_set2 execution_run2 
+invariant1 invariant2 invariant3 invariant4 invariant5
  init assign deref may_delete reset_inref reset_ref D_event D_inref D_ref D_antidoteKey 
 integer_of_nat int_of_integer integer_of_nat nat_of_integer fmap_of_list D_event integer_of_int
 events event_operation event_result event_effectors event_executionOrder event_state_pre event_state_post event_snapshot 
@@ -822,16 +841,11 @@ abbreviation "ir2 \<equiv> D_inref 2"
 abbreviation "e i \<equiv> D_event i"
 
 value "let ops = [
- (* e0 *)  (init r3 ir2, fmap_of_list []),
- (* e1 *)  (reset_ref r2, fmap_of_list [(e 0,0)]),
- (* e2 *)  (init r2 ir1, fmap_of_list [(e 0,1),(e 1,1)]),
- (* e3 *)  (assign r3 r2, fmap_of_list [(e 0,1)]),
- (* e4 *)  (reset_ref r1, fmap_of_list [(e 1,1),(e 0,1),(e 3,1)]),
- (* e5 *)  (assign r2 r3, fmap_of_list [(e 0,1)]),
- (* e6 *)  (may_delete ir1 [], fmap_of_list [(e 3,1),(e 1,0),(e 0,1)])
+ (* e0 *)  (init r1 ir1, fmap_of_list []),
+ (* e1 *)  (reset_ref r1, fmap_of_list [(e 0,1)])
    ]; 
-   E = execution_run (map transformOp ops) ;
-   ev = e 4;
+   E = execution_run (map transformOp ops) 
+   (*ev = e 4;
    eInfo = the (fmlookup (events E) ev);
    e' = e 6;
    eInfo' = the (fmlookup (events E) e');
@@ -843,9 +857,9 @@ value "let ops = [
         (case (state_inrefs (event_state_post eInfo')).[inref] of
             Some inrefState' \<Rightarrow> two_phase_set_get (rev_refs inrefState') = {}
           | None \<Rightarrow> False
-    )))
+    )))*)
    
-  in (inv, invariant2 E, E)"
+  in (invariant3 E, E)"
 
 
 
