@@ -243,7 +243,7 @@ instance Arbitrary OprList where
 
 make_transactional l = map (\(e,i) -> (e,100)) l
 
-transactional = False
+transactional = True
 
 from_opr (Opr o l) =
     let l' = if transactional then make_transactional l else l in

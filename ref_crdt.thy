@@ -1,26 +1,20 @@
 theory ref_crdt
   imports Main
    "sorted_list"
+   fmap_functions
+system_model
     "~~/src/HOL/Library/Finite_Map"
     "~~/src/HOL/Library/Open_State_Syntax"
     "~~/src/HOL/Library/Code_Target_Numeral"
 begin
 
-(*<*)
-abbreviation lookupsyntax ("_ .[_]"[25,25]25) where
-"m.[x] \<equiv> fmlookup m x"
-
-abbreviation lookupsyntax2 ("_ ![_]"[25,25]25) where
-"m![x] \<equiv> the (fmlookup m x)"
-
-(*>*)
 
 section {* System model *}
 
 datatype event = D_event (event_number:int)
 datatype inref = D_inref (inref_number:int)
 datatype ref = D_ref (ref_number:int)
-datatype antidoteKey =  D_antidoteKey int (*D_antidoteKey_ref (key_ref:ref) | D_antidoteKey_inref (key_inref:inref)*) | NullKey
+datatype antidoteKey =  D_antidoteKey int | NullKey
 
 instantiation event :: linorder begin
 definition "less_eq_event x y \<equiv> event_number x \<le> event_number y"
