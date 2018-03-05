@@ -18,6 +18,11 @@ abbreviation "snapshot_num s e \<equiv> case (snapshot_map s).[e] of Some n \<Ri
 definition includedIn where
 "includedIn e n snapshot \<equiv> n < snapshot_num snapshot e"
 
+find_consts "'k \<Rightarrow> 'v \<Rightarrow> ('k,'v) fmap \<Rightarrow> ('k,'v) fmap"
+
+definition snapshot_update  :: "snapshot \<Rightarrow> event \<Rightarrow> nat \<Rightarrow> snapshot" where
+"snapshot_update s e n = Snapshot (fmupd e n (snapshot_map s))"
+
 instantiation snapshot :: preorder begin
 
 

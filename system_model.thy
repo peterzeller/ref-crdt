@@ -22,8 +22,8 @@ We parameterize our Model based on four type parameters:
 record ('operation, 'operation_result, 'operation_effector, 'state) eventInfo =
   event_operation :: "'operation"
   event_result :: 'operation_result
-  event_effectors :: "'operation_effector list"
-  event_executionOrder :: "event list"
+  event_effectors :: "'operation_effector list" (* downstream messages generated here *)
+  event_executionOrder :: "(event \<times> nat) list" (* execution order: event, number of effector  *)
   event_state_pre :: 'state (* state before executing the event *)
   event_state_post :: 'state (* state after executing the event *)
   event_snapshot :: snapshot  (* events that happened before and how many of their effectors are included in the snapshot *)
@@ -95,10 +95,16 @@ definition executeEffectors :: "'operation_effector list \<Rightarrow> 'state \<
 definition sorted_partial :: "'a list \<Rightarrow> 'a rel \<Rightarrow> bool" where
 "sorted_partial list rel \<equiv> (\<forall>j<length list. \<forall>i<j. (list!j, list!i)\<notin>rel)"
 
+definition sorted_partial_i :: "('a \<times> nat) list \<Rightarrow> 'a rel \<Rightarrow> bool" where
+"sorted_partial_i list rel \<equiv> (\<forall>j<length list. \<forall>i<j. if fst (list!j) = fst (list!i) then snd (list!i) < snd (list!j) else (fst (list!j), fst (list!i))\<notin>rel)"
+
+
+
+
 
 definition
-"valid_event_sequence eventList eventSet hb \<equiv> 
-set eventList = eventSet \<and> distinct eventList \<and> sorted_partial eventList hb"
+"valid_event_sequence eventList snapshot hb \<equiv> 
+(\<forall>(e,i)\<in>snapshot_entries snapshot.\<forall>i'<i. (e,i')\<in>set eventList ) \<and> sorted_partial_i eventList hb"
 
 
 definition "previous_events hb e \<equiv> fst ` Set.filter (\<lambda>(x,y). y = e \<and> x\<noteq>e) hb"  (* or {e'.  e'\<noteq>e \<and> (e',e)\<in>hb}*)
@@ -112,20 +118,23 @@ value "parallel_closure {} {1::int,2,3,4,5} ({(2,3), (1,4), (1,1), (2,2), (3,3),
 
 export_code previous_events in Haskell
 
+
 definition 
 "wf_correct_execution_lists execution \<equiv> 
-events execution |> fmpred (\<lambda>e eInfo. valid_event_sequence (event_executionOrder eInfo) (previous_events (happensBefore execution) e) (happensBefore execution))
+events execution |> fmpred (\<lambda>e eInfo. valid_event_sequence (event_executionOrder eInfo) (event_snapshot eInfo) (happensBefore execution))
 "
 
 export_code wf_correct_execution_lists
 
 find_consts "('a \<Rightarrow> 'b list) => 'a list => 'b list"
 
+definition get_effectors :: "('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> (event \<times> nat) list \<Rightarrow> 'operation_effector list" where
+"get_effectors execution exec_order \<equiv> exec_order |> map (\<lambda>(e',i'). (event_effectors ((events execution)![e'])) ! i')"
+
 definition wf_effector :: "('operation, 'operation_result, 'operation_effector, 'state)execution \<Rightarrow> 'state \<Rightarrow> ('operation_effector, 'state) effector_function \<Rightarrow> bool" where
 "wf_effector execution initS eff \<equiv>
 events execution |> fmpred (\<lambda>e eInfo. 
-  let effectors = event_executionOrder eInfo |> List.maps (\<lambda>e'. 
-      case (events execution).[e'] of Some eInfo' \<Rightarrow> take (snapshot_num (event_snapshot eInfo) e') (event_effectors eInfo') | None \<Rightarrow> [])
+  let effectors = get_effectors execution (event_executionOrder eInfo)
   in
   event_state_pre eInfo = executeEffectors effectors initS eff
   \<and> event_state_post eInfo = executeEffectors (event_effectors eInfo) (event_state_pre eInfo) eff)

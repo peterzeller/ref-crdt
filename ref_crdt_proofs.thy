@@ -168,7 +168,7 @@ using assms proof (induct "length xs" arbitrary: xs rule: less_induct)
 qed
 
 
-
+(*
 lemma valid_event_sequence_topSort:
   assumes "finite S"
 and po1: "antisym hb"
@@ -180,6 +180,36 @@ proof (auto simp add: valid_event_sequence_def `finite S`)
 
   show "sorted_partial (topSort hb (sorted_list_of_set S)) hb"
     by (simp add: distinct_sorted_list_of_set po1 po2 topSort_sorted)
+qed
+*)
+
+
+lemma sorted_partial_i_distinct:
+  assumes "antisym R"
+    and "trans R"
+and "sorted_partial_i xs R "
+shows "distinct xs"
+  using `sorted_partial_i xs R` proof (induct xs rule: rev_induct)
+  case Nil
+  then show ?case by simp
+next
+  case (snoc x xs)
+  from `sorted_partial_i (xs @ [x]) R`
+  have " sorted_partial_i xs R"
+    apply (auto simp add: sorted_partial_i_def)
+    apply (smt Suc_lessD length_append_singleton less_SucI less_trans_Suc list_update_append1 list_update_id nth_list_update_eq)
+    by (smt dual_order.strict_trans less_SucI nth_append)
+    
+  hence "distinct xs"
+    using snoc.hyps by simp
+
+  moreover have "x \<notin> set xs"
+    using `sorted_partial_i (xs @ [x]) R`
+    apply (auto simp add: sorted_partial_i_def in_set_conv_nth)
+    by (metis less_Suc_eq less_not_refl nth_append nth_append_length)
+
+  ultimately show ?case 
+    by simp
 qed
 
 end

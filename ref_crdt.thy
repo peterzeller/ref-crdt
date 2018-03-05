@@ -248,6 +248,9 @@ definition generator_impl :: generator_function where
 definition 
 "wellFormed_impl execution \<equiv> wellFormed execution initialState generator_impl effector_impl localPrecondition_impl precondition_impl"
 
+section {* Test executions  *}
+(* TODO move to new file.*)
+
 find_consts "('a \<Rightarrow> bool) \<Rightarrow> 'a list \<Rightarrow> 'a option"
 
 fun find_smaller :: "'a rel \<Rightarrow> 'a \<Rightarrow> 'a list \<Rightarrow> 'a option" where
@@ -310,6 +313,7 @@ let
                  |> Snapshot ;
    precond = (precondition_impl opr orElse (\<lambda>x. True));
    execOrder = topSort (happensBefore E) (sorted_list_of_set2 deps); 
+   execOrder' = execOrder |> List.maps (\<lambda>e. map (\<lambda>i. (e,i)) [0..<snapshot_num snapshot e]);
    preState :: state = executeEffectors (List.maps (\<lambda>e. take (snapshot_num snapshot e) (event_effectors ((events E)![e]))) execOrder) initialState effector_impl
 in if \<not>(localPrecondition_impl opr preState \<and> precond preState) then
   E
@@ -322,7 +326,7 @@ else
       event_operation = opr,
       event_result = res,
       event_effectors = eff,
-      event_executionOrder = execOrder,
+      event_executionOrder = execOrder',
       event_state_pre = preState,
       event_state_post = postState,
       event_snapshot = snapshot

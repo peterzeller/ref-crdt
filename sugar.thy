@@ -21,5 +21,8 @@ definition compose_forward (infixl "|>" 25) where
 lemma "(1 |> op+ 1 |> op* 2) = (4 :: int)"
   by eval
 
+abbreviation questionmark ("???") where
+"??? \<equiv> undefined"
+
 
 end
