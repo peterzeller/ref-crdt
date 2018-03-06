@@ -55,4 +55,8 @@ qed
 
 end
 
+definition concurrent :: "'a::preorder \<Rightarrow> 'a \<Rightarrow> bool" ("(_/ \<parallel> _)"  [51, 51] 50)  where
+"x \<parallel> y \<longleftrightarrow> \<not>(x \<le> y \<or> y \<le> x)"
+
+
 end

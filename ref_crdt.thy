@@ -265,8 +265,8 @@ lemma find_length2[simp]: "find P xs = Some x \<Longrightarrow> Suc (length (rem
   by (induct xs, auto split: if_splits)
 
 
-definition findMinimal :: "'a rel \<Rightarrow> 'a list \<Rightarrow> 'a"   where 
-"findMinimal R xs \<equiv> case find (\<lambda>y. \<forall>x\<in>set xs. x=y \<or> (x,y)\<notin>R) xs of None \<Rightarrow> hd xs | Some x \<Rightarrow> x"
+definition findMinimal :: "('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> 'a list \<Rightarrow> 'a"   where 
+"findMinimal R xs \<equiv> case find (\<lambda>y. \<forall>x\<in>set xs. x=y \<or> \<not>R x y) xs of None \<Rightarrow> hd xs | Some x \<Rightarrow> x"
 
 
 lemma findMinimalIn: "xs\<noteq>[] \<Longrightarrow>  findMinimal R xs \<in> set xs"
@@ -281,13 +281,16 @@ lemma findMinimal_termination2[simp]: "findMinimal R (v # va) \<noteq> v \<Longr
   by (metis One_nat_def Suc_pred findMinimalIn length_pos_if_in_set length_remove1 lessI list.discI set_ConsD)
 
 
-fun topSort :: "'a rel \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+fun topSort :: "('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> 'a list \<Rightarrow> 'a list" where
   "topSort R [] = []"
 | "topSort R xs = (let m = findMinimal R xs in m#topSort R (remove1 m xs))" 
 
 find_consts "('k, 'v) fmap"
 
 definition "numberEffectors E e \<equiv> e |> fmlookup (events E) |> the |> event_effectors |> length"
+
+definition 
+"happensBefore E x y \<equiv> (x,1) happened before (y,1) in E"
 
 definition execution_addStep :: "int \<Rightarrow> operation \<Rightarrow> (event,nat) fmap \<Rightarrow> execution' \<Rightarrow> execution'" where
 "execution_addStep eId opr preEventsN E \<equiv> 
@@ -297,7 +300,7 @@ let
    (* only existing events *) 
    deps1 :: event set = Set.filter (\<lambda>e. e\<in>fmdom' (events E)) preEvents;
    (* include parallel events which need to be stable *)
-   deps2 = Set.filter (\<lambda>e. e\<in>deps1 \<or> (precondition_impl (event_operation ((events E)![e])) \<noteq> None \<and> (\<exists>e'\<in>deps1. (e',e)\<in>happensBefore E ) )) (fmdom' (events E));
+   deps2 = Set.filter (\<lambda>e. e\<in>deps1 \<or> (precondition_impl (event_operation ((events E)![e])) \<noteq> None \<and> (\<exists>e'\<in>deps1. happensBefore E e' e ) )) (fmdom' (events E));
    (* include causal dependencies *)
    deps3 = downwards_closure deps2 E; (* TODO could be more precise; at the level of effectors instead of events*)
    (* include parallel events, if stable precondition check required *)
@@ -335,6 +338,8 @@ else
 
 "
 
+export_code execution_addStep in Haskell
+
 definition "emptyExecution \<equiv> \<lparr>events = fmempty\<rparr>"
 
 record trace_event = 
@@ -364,8 +369,8 @@ definition invariant2 :: "execution' \<Rightarrow> bool" where
 (\<forall>(e,eInfo)\<in>events' E. 
   \<forall>(inref,inrefState)\<in>fmap_entries (state_inrefs (event_state_pre eInfo)). 
  two_phase_set_get (rev_refs inrefState) = {}
-   \<and> stable e E
-  \<longrightarrow> (\<forall>(e', eInfo')\<in>events' E.  (e,e')\<in>happensBefore E \<longrightarrow> 
+   \<and> stable (event_snapshot eInfo) E
+  \<longrightarrow> (\<forall>(e', eInfo')\<in>events' E.  happensBefore E e e' \<longrightarrow> 
         (case (state_inrefs (event_state_post eInfo')).[inref] of
             Some inrefState' \<Rightarrow> two_phase_set_get (rev_refs inrefState') = {}
           | None \<Rightarrow> False
@@ -493,7 +498,7 @@ lemma "let E = execution_run (cleanOperations ops 0) in invariant2 E"
   quickcheck[random,size=40,timeout=1000,verbose,timeout=1000]
   oops
 *)
-
+(*
 abbreviation "r1 \<equiv> D_ref 1"
 abbreviation "r2 \<equiv> D_ref 2"
 abbreviation "r3 \<equiv> D_ref 3"
@@ -524,6 +529,6 @@ value "let ops = [
    
   in (invariant3 E, E)"
 
-
+*)
 
 end

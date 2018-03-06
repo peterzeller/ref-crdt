@@ -5,27 +5,27 @@ begin
 
 
 lemma findMinimal_depends:
-  assumes same: "\<And>x y. \<lbrakk>x\<in>set xs; y\<in> set xs\<rbrakk> \<Longrightarrow> (x,y)\<in>R1 \<longleftrightarrow>(x,y)\<in>R2"
+  assumes same: "\<And>x y. \<lbrakk>x\<in>set xs; y\<in> set xs\<rbrakk> \<Longrightarrow> R1 x y \<longleftrightarrow>R2 x y"
   shows "findMinimal R1 xs = findMinimal R2 xs"
   using assms 
   by (auto simp add: findMinimal_def  split: option.splits cong: find_cong)
 
 
 lemma topSort_depends:
-  assumes "\<And>x y. \<lbrakk>x\<in>set xs; y\<in> set xs\<rbrakk> \<Longrightarrow> (x,y)\<in>R1 \<longleftrightarrow>(x,y)\<in>R2"
+  assumes "\<And>x y. \<lbrakk>x\<in>set xs; y\<in> set xs\<rbrakk> \<Longrightarrow> R1 x y \<longleftrightarrow>R2 x y"
   shows "topSort R1 xs = topSort R2 xs"
   using assms  apply (induct R1 xs rule: topSort.induct)
    apply simp
   by (metis findMinimal_depends notin_set_remove1 topSort.simps(2))
 
 
-
+(*
 lemma topSortRest: "topSort (Restr R (set xs)) xs = topSort R xs"
   by (rule topSort_depends, auto)
 
 lemma topSortRest2: "set xs \<subseteq> S \<Longrightarrow> topSort (Restr R S) xs = topSort R xs"
   by (smt Int_iff mem_Sigma_iff subset_iff topSort_depends)
-
+*)
 
 lemma topSort_set[simp]: "set (topSort R xs) = set xs"
   apply (induct R xs rule: topSort.induct)
@@ -87,7 +87,7 @@ qed
 
 
 
-
+(*
 lemma findMinimal_min1:
   assumes in_set: "a\<in>set xs"
 and not_min: "a\<noteq>findMinimal R xs"
@@ -118,11 +118,11 @@ and po1: "antisym R"
 and po2: "trans R"
 shows "x = findMinimal R xs"
   by (meson assms(1) assms(2) findMinimal_min1 nonempty po1 po2)
-
+*)
 lemma notin_remove1: "distinct xs \<Longrightarrow> x \<notin> set (remove1 x xs)"
   by simp
 
-
+(*
 lemma topSort_sorted:
   assumes "True" (*"partial_order_on (set xs) R" *)
     and "distinct xs"
@@ -166,7 +166,7 @@ using assms proof (induct "length xs" arbitrary: xs rule: less_induct)
       by (meson findMinimalIn list.simps(3) set_ConsD)
   qed
 qed
-
+*)
 
 (*
 lemma valid_event_sequence_topSort:
@@ -183,7 +183,7 @@ proof (auto simp add: valid_event_sequence_def `finite S`)
 qed
 *)
 
-
+(*
 lemma sorted_partial_i_distinct:
   assumes "antisym R"
     and "trans R"
@@ -211,5 +211,6 @@ next
   ultimately show ?case 
     by simp
 qed
+*)
 
 end

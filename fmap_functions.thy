@@ -26,4 +26,8 @@ lemma fmap_entries_forall[code_abbrev]: "fmpred P m \<longleftrightarrow> (\<for
 lemma fmap_entries_exists[code_abbrev]: "(\<not>fmpred (\<lambda>k v. \<not>P k v) m) \<longleftrightarrow> (\<exists>(k,v)\<in>fmap_entries m. P k v)"
   by (subst fmap_entries_forall, auto)
 
+lemma in_fmap_entries: "(m.[x]) = Some y \<Longrightarrow> (x,y)\<in>fmap_entries m"
+  by (simp add: fmap_entries_def fmdom'I image_iff)
+
+
 end

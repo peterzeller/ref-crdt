@@ -34,37 +34,26 @@ record ('operation, 'operation_result, 'operation_effector, 'state) execution =
 abbreviation "events' E \<equiv> fmap_entries (events E)"
 abbreviation "eventsIds E \<equiv> fmdom' (events E)"
 
-definition happensBeforeP :: "event \<Rightarrow> event \<Rightarrow> ('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> bool" ("_ happened before _ in _" [25,25,25]25) where
-"x happened before y in E \<equiv> 
-   case (events E).[y] of 
+definition happensBeforeP :: "(event\<times>nat) \<Rightarrow> (event\<times>nat) \<Rightarrow> (event \<rightharpoonup> snapshot) \<Rightarrow> bool" ("_ happened before _ with _" [25,25,25]25) where
+"x happened before y with snapshots \<equiv> 
+   if fst x = fst y then snd x < snd y else
+   case snapshots (fst y) of 
      None \<Rightarrow> False 
-   | Some yInfo \<Rightarrow> (
-      case (events E).[x] of
-       None \<Rightarrow> False 
-     | Some xInfo \<Rightarrow> includedIn x (length (event_effectors xInfo)) (event_snapshot yInfo)
-  ) "
+   | Some snapshot \<Rightarrow> includedIn (fst x) (snd x) snapshot"                 
 
-definition happensBefore :: "('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> event rel"  where
-"happensBefore E \<equiv> {(x,y). x happened before y in E}"
+definition happensBeforeP2 :: "(event\<times>nat) \<Rightarrow> (event\<times>nat) \<Rightarrow> ('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> bool" ("_ happened before _ in _" [25,25,25]25) where
+"x happened before y in E \<equiv> 
+   if fst x = fst y then snd x < snd y else
+   case (events E).[fst y] of 
+     None \<Rightarrow> False 
+   | Some yInfo \<Rightarrow> includedIn (fst x) (snd x) (event_snapshot yInfo)"  
 
+lemma happensBeforeP2_def2:
+"(x happened before y in E) \<longleftrightarrow> (x happened before y with (\<lambda>e. map_option event_snapshot ((events E).[e])))"
+  by (auto simp add: happensBeforeP_def happensBeforeP2_def split: option.splits)
 
-lemma happensBefore_code[code]:
-"happensBefore E = \<Union> ((\<lambda>(e,eInfo). (Set.filter (\<lambda>e'. e' happened before e in E) (snapshot_events (event_snapshot eInfo))) \<times> {e} )  ` fmap_entries (events E))"
-  apply (auto simp add: happensBefore_def happensBeforeP_def  split: option.splits)
-  apply (rule_tac x="(b,y)" in bexI)
-  apply (auto simp add: fmap_entries_def fmdom'I image_iff)
-  using fmlookup_dom'_iff includedIn_def by fastforce
+definition "happensBeforeE E x y \<equiv> x happened before y in E"
 
-
-lemma in_happensBefore_code[code_abbrev]: "(x happened before y in E) \<longleftrightarrow> (x,y)\<in>happensBefore E"
-  by (auto simp add: happensBefore_def happensBeforeP_def fmdom'I split: option.splits)
-
-export_code happensBefore in Haskell
-
-
-definition "foo x y E \<equiv> \<forall>(e,ei)\<in>fmap_entries(events E). True" 
-
-export_code foo in Haskell
 
 type_synonym ('operation, 'operation_result, 'operation_effector, 'state) generator_function = "('operation \<Rightarrow> uid \<Rightarrow> 'state \<Rightarrow> 'operation_result \<times> ('operation_effector list))"
 type_synonym ('operation_effector, 'state) effector_function = "('operation_effector \<Rightarrow> 'state \<Rightarrow> 'state)"
@@ -72,12 +61,15 @@ type_synonym ('operation_effector, 'state) effector_function = "('operation_effe
 
 
 definition "wf_causallyConsistent E \<equiv> 
-\<forall>(e,eInfo)\<in>events' E. \<forall>(e',i)\<in>snapshot_entries(event_snapshot eInfo). 
+\<forall>(e,eInfo)\<in>events' E. \<forall>e'\<in>snapshot_events(event_snapshot eInfo). 
   case (events E).[e'] of
       None \<Rightarrow> False
     | Some eInfo' \<Rightarrow> event_snapshot eInfo' \<le> event_snapshot eInfo
 "
 
+definition "wf_acyclic E \<equiv> 
+\<forall>(e,eInfo)\<in>events' E.  ((snapshot_map (event_snapshot eInfo)).[e]) = None
+"
 
 
 
@@ -95,25 +87,26 @@ definition executeEffectors :: "'operation_effector list \<Rightarrow> 'state \<
 definition sorted_partial :: "'a list \<Rightarrow> 'a rel \<Rightarrow> bool" where
 "sorted_partial list rel \<equiv> (\<forall>j<length list. \<forall>i<j. (list!j, list!i)\<notin>rel)"
 
-definition sorted_partial_i :: "('a \<times> nat) list \<Rightarrow> 'a rel \<Rightarrow> bool" where
-"sorted_partial_i list rel \<equiv> (\<forall>j<length list. \<forall>i<j. if fst (list!j) = fst (list!i) then snd (list!i) < snd (list!j) else (fst (list!j), fst (list!i))\<notin>rel)"
-
-
+definition sorted_partial' :: "'a list \<Rightarrow> ('a \<Rightarrow> 'a \<Rightarrow> bool) \<Rightarrow> bool" where
+"sorted_partial' list rel \<equiv> (\<forall>j<length list. \<forall>i<j. \<not>rel (list!j) (list!i))"
 
 
 
 definition
 "valid_event_sequence eventList snapshot hb \<equiv> 
-(\<forall>(e,i)\<in>snapshot_entries snapshot.\<forall>i'<i. (e,i')\<in>set eventList ) \<and> sorted_partial_i eventList hb"
+   (\<forall>(e,i)\<in>snapshot_entries snapshot.\<forall>i'<i. (e,i')\<in>set eventList )
+ \<and> (\<forall>(e,i)\<in>set eventList. i < snapshot_num snapshot e)
+ \<and> sorted_partial' eventList hb"
 
 
 definition "previous_events hb e \<equiv> fst ` Set.filter (\<lambda>(x,y). y = e \<and> x\<noteq>e) hb"  (* or {e'.  e'\<noteq>e \<and> (e',e)\<in>hb}*)
 definition "downwards_closure S E \<equiv> S \<union>  (\<Union>e\<in>S. case (events E).[e] of None \<Rightarrow> {} | Some info \<Rightarrow> snapshot_events (event_snapshot info))"
-definition "parallel_closure S A hb \<equiv> Set.filter (\<lambda>x. x\<in>S \<or> (\<exists>y\<in>S. (y,x)\<notin>hb)) A"
+definition "parallel_closure S A hb \<equiv> Set.filter (\<lambda>x. x\<in>S \<or> (\<exists>y\<in>S. \<not>hb y x)) A"
 
-value "parallel_closure {1,2::int} {1,2,3,4,5} ({(2,3), (2,4), (1,4), (1,1), (2,2), (3,3), (4,4), (5,5)}\<^sup>+)"
 
-value "parallel_closure {} {1::int,2,3,4,5} ({(2,3), (1,4), (1,1), (2,2), (3,3), (4,4), (5,5)}\<^sup>+)"
+value "parallel_closure {1,2::int} {1,2,3,4,5} (\<lambda>x y. (x,y)\<in> {(2,3), (2,4), (1,4), (1,1), (2,2), (3,3), (4,4), (5,5)}\<^sup>+)"
+
+value "parallel_closure {} {1::int,2,3,4,5} (\<lambda>x y. (x,y)\<in> {(2,3), (1,4), (1,1), (2,2), (3,3), (4,4), (5,5)}\<^sup>+)"
 
 
 export_code previous_events in Haskell
@@ -121,7 +114,7 @@ export_code previous_events in Haskell
 
 definition 
 "wf_correct_execution_lists execution \<equiv> 
-events execution |> fmpred (\<lambda>e eInfo. valid_event_sequence (event_executionOrder eInfo) (event_snapshot eInfo) (happensBefore execution))
+events execution |> fmpred (\<lambda>e eInfo. valid_event_sequence (event_executionOrder eInfo) (event_snapshot eInfo) (happensBeforeE execution))
 "
 
 export_code wf_correct_execution_lists
@@ -145,24 +138,13 @@ definition
 events execution |> fmpred (\<lambda>e eInfo.  localPred (event_operation eInfo) (event_state_pre eInfo))
 "
 
+text {*
+A snapshot S is stable in an execution E, if the execution does not contain any event 
+which has a snapshot concurrent to snapshot S.
+*}
 
-definition 
-"closed_concurrent e hb E \<equiv> \<forall>e1\<in>E. e1\<noteq>e \<and> (e1, e)\<in>hb \<longrightarrow> (\<forall>e2\<in>E.(e1,e2)\<notin>hb \<and> (e2,e1)\<notin>hb \<longrightarrow> (e2, e)\<in>hb)"
-
-text {* Define that event e has received all effectors from its dependencies. *}
-definition 
-"fullSnapshot e E \<equiv> 
-  case (events E).[e] of 
-      None \<Rightarrow> False
-    | Some info \<Rightarrow> (\<forall>(e',n)\<in>snapshot_entries (event_snapshot info). 
-        case (events E).[e'] of
-            None \<Rightarrow> False
-          | Some info' \<Rightarrow> n \<ge> length (event_effectors info'))"
-
-definition
-"stable e E \<equiv> closed_concurrent e (happensBefore E) (fmdom' (events E))
-            \<and> fullSnapshot e E  "
-
+definition stable :: "snapshot \<Rightarrow> ('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> bool" where
+"stable S E \<equiv> \<not>(\<exists>(e,eInfo)\<in>fmap_entries (events E). event_snapshot eInfo \<parallel> S)"
 
 definition 
 "wf_stablePreconditions execution pred \<equiv>
@@ -170,18 +152,16 @@ events execution |> fmpred (\<lambda>e eInfo.
     case pred (event_operation eInfo) of 
        None \<Rightarrow> True
      | Some cond \<Rightarrow> 
-        stable e execution
+        stable (event_snapshot eInfo) execution
       \<and> cond (event_state_pre eInfo))
 "
-
-export_code closed_concurrent in Haskell
-export_code wf_stablePreconditions in Haskell
 
 
 definition wellFormed :: "('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> 'state \<Rightarrow> ('operation, 'operation_result, 'operation_effector, 'state) generator_function \<Rightarrow> ( 'operation_effector, 'state) effector_function \<Rightarrow> ('operation \<Rightarrow> 'state \<Rightarrow> bool) \<Rightarrow> ('operation \<rightharpoonup> 'state \<Rightarrow> bool) \<Rightarrow> bool"
 where
 "wellFormed execution initS gen eff localPre pre \<equiv>
     wf_causallyConsistent execution 
+  \<and> wf_acyclic execution
   \<and> wf_correct_execution_lists execution
   \<and> wf_generator execution gen
   \<and> wf_effector execution initS eff
