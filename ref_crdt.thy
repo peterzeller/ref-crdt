@@ -184,9 +184,10 @@ definition ref_reset_targets :: "ref \<Rightarrow> inref option \<Rightarrow> ui
               })
       }"
 **)
-
-definition ref_reset_targets :: "ref \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
-"ref_reset_targets ref uid state  \<equiv> exec {
+(*
+old version, forEach hard to use in proofs *)
+definition ref_reset_targets_old :: "ref \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
+"ref_reset_targets_old ref uid state  \<equiv> exec {
         let (outkeys :: (inref option\<times>uid) set) = (dest_keys (ref_state state ref));
         set_forEach outkeys (\<lambda>(target,uid). 
           case target of 
@@ -194,6 +195,20 @@ definition ref_reset_targets :: "ref \<Rightarrow> uid \<Rightarrow> state \<Rig
             | Some target' => inref_rev_refs_remove target' ref uid
             )
       }"
+
+find_consts "'a set \<Rightarrow> ('a \<Rightarrow> 'b set) \<Rightarrow>  'b set"
+
+term "Set.bind {1::int,2,3} (\<lambda>x. {x, 3*x}) "
+
+definition ref_reset_targets :: "ref \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
+"ref_reset_targets ref uid state effs \<equiv> 
+        let (outkeys :: (inref option\<times>uid) set) = (dest_keys (ref_state state ref)) in
+        effs@(List.maps (\<lambda>(target,uid). 
+          case target of 
+              None \<Rightarrow> []
+            | Some target' => inref_rev_refs_remove target' ref uid []
+            ) (sorted_list_of_set2 outkeys))
+      "
 
 definition ref_reset :: "ref \<Rightarrow> inref option \<Rightarrow> uid \<Rightarrow> state \<Rightarrow> operation_effector list \<Rightarrow> operation_effector list" where 
 "ref_reset ref ignoredInref uid state  \<equiv> exec {

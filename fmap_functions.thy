@@ -17,6 +17,14 @@ abbreviation lookupsyntax2 ("_ ![_]"[25,25]25) where
 definition fmap_entries :: "('k, 'v) fmap \<Rightarrow> ('k\<times>'v) set" where
 "fmap_entries m \<equiv> (\<lambda>k. (k, m![k])) ` fmdom' m" 
 
+syntax
+  "_fm_all"       :: "pttrn \<Rightarrow> pttrn \<Rightarrow> 'a set \<Rightarrow> bool \<Rightarrow> bool"      ("(3\<forall>[_\<mapsto>_]\<in>_./ _)" [0, 0, 10] 10)
+
+translations
+  "\<forall>[k\<mapsto>v]\<in>A. P" \<rightleftharpoons> "CONST fmpred (\<lambda>k v. P) A"
+
+term "\<forall>[x\<mapsto>y]\<in>m. y < x"
+
 
 lemma fmap_entries_forall[code_abbrev]: "fmpred P m \<longleftrightarrow> (\<forall>(k,v)\<in>fmap_entries m. P k v)"
   apply (auto simp add: fmap_entries_def)

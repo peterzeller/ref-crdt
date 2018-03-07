@@ -71,7 +71,11 @@ definition "wf_acyclic E \<equiv>
 \<forall>(e,eInfo)\<in>events' E.  ((snapshot_map (event_snapshot eInfo)).[e]) = None
 "
 
+definition "valid_snapshot E snapshot \<equiv> 
+\<forall>(e, n)\<in>snapshot_entries snapshot. \<exists>eInfo. (events E.[e]) = Some eInfo \<and> length (event_effectors eInfo) > n"
 
+definition "wf_valid_snapshots E \<equiv>
+\<forall>(e,eInfo)\<in>events' E. valid_snapshot E (event_snapshot eInfo)"
 
 definition wf_generator :: "('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> ('operation, 'operation_result, 'operation_effector, 'state)generator_function \<Rightarrow> bool" where
 "wf_generator execution gen \<equiv>
@@ -162,6 +166,7 @@ where
 "wellFormed execution initS gen eff localPre pre \<equiv>
     wf_causallyConsistent execution 
   \<and> wf_acyclic execution
+  \<and> wf_valid_snapshots execution
   \<and> wf_correct_execution_lists execution
   \<and> wf_generator execution gen
   \<and> wf_effector execution initS eff
