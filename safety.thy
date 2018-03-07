@@ -319,6 +319,29 @@ text {* First establish some general facts:
 How does the state depend on executed effectors (depending on snapshot)
 and which operations can generate which effectors... *}
 
+lemma state_refs_dest_keys:
+  assumes wf: "wellFormed_impl E"
+    and state_def: "state = executeEffectors effectors initialState effector_impl"
+    and effectors_def: "effectors = get_effectors E exec_order"
+    and valid_event_seq: "valid_event_sequence exec_order snapshot (happensBeforeE E)"
+    and snapshot_valid: "valid_snapshot E snapshot"
+    and r: "(state_refs state.[r]) = Some rState"
+  shows "dest_keys rState = {(x,uid) | x uid e_a oldUids. 
+                 e_a \<in>\<^sub>s snapshot \<and> get_effector E e_a = effector_ref_dest_keys_assign ref x uid oldUids
+                \<and> (\<nexists>e_a' x' uid' oldUids'. (e_a happened before e_a' in E) \<and> e_a' \<in>\<^sub>s snapshot \<and> get_effector E e_a = effector_ref_dest_keys_assign ref x' uid' oldUids')}"
+proof auto
+  show  "\<exists>aa ba. (aa, ba) \<in>\<^sub>s snapshot \<and>
+                   (\<exists>oldUids. get_effector E (aa, ba) = effector_ref_dest_keys_assign ref x uid oldUids) \<and>
+                   (\<forall>a b. (a, b) \<in>\<^sub>s snapshot \<longrightarrow>
+                          ((aa, ba) happened before (a, b) in E) \<longrightarrow> (\<forall>x' uid' oldUids'. get_effector E (aa, ba) \<noteq> effector_ref_dest_keys_assign ref x' uid' oldUids'))"
+    if x: "(x, uid) \<in> dest_keys rState"
+    for x uid
+  proof -
+
+
+
+
+  qed
 
 lemma safety_inv1:
   assumes wf: "wellFormed_impl E"

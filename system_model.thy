@@ -125,8 +125,12 @@ export_code wf_correct_execution_lists
 
 find_consts "('a \<Rightarrow> 'b list) => 'a list => 'b list"
 
+definition get_effector :: "('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> (event \<times> nat) \<Rightarrow> 'operation_effector" where
+"get_effector execution e \<equiv> event_effectors ((events execution)![fst e]) ! snd e"
+
+
 definition get_effectors :: "('operation, 'operation_result, 'operation_effector, 'state) execution \<Rightarrow> (event \<times> nat) list \<Rightarrow> 'operation_effector list" where
-"get_effectors execution exec_order \<equiv> exec_order |> map (\<lambda>(e',i'). (event_effectors ((events execution)![e'])) ! i')"
+"get_effectors execution exec_order \<equiv> map (get_effector execution) exec_order"
 
 definition wf_effector :: "('operation, 'operation_result, 'operation_effector, 'state)execution \<Rightarrow> 'state \<Rightarrow> ('operation_effector, 'state) effector_function \<Rightarrow> bool" where
 "wf_effector execution initS eff \<equiv>
