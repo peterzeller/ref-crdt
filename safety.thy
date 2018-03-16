@@ -105,7 +105,8 @@ proof (auto simp add: forallStates_def forallEvents_def compose_forward_def fmpr
         using wf eInfo_def by (auto simp add: wellFormed_impl_def wellFormed_def wf_effector_def compose_forward_def  )
 
       have event_effectors_def: "get_effectors E (map (Pair e) [0..<length (event_effectors eInfo)]) = event_effectors eInfo"
-        by (auto simp add: get_effectors_def compose_forward_def eInfo_def nth_equalityI)
+        by (auto simp add: get_effectors_def compose_forward_def eInfo_def nth_equalityI get_effector_def comp_def) 
+
 
       have sorted_before: "sorted_partial' (event_executionOrder eInfo) (happensBeforeE E)"
         using eInfo_def local.wf valid_event_sequence_def wf_valid_event_sequence by blast
@@ -319,29 +320,178 @@ text {* First establish some general facts:
 How does the state depend on executed effectors (depending on snapshot)
 and which operations can generate which effectors... *}
 
+
+text {* Show that effector_ref_dest_keys_assign uses unique identifiers: *}
+lemma effector_ref_dest_keys_assign_unique_ids:
+  assumes "effectors!i = effector_ref_dest_keys_assign ref x uid oldUids"
+    and "effectors!i' = effector_ref_dest_keys_assign ref x' uid' oldUids'"
+    and wf: "wellFormed_impl E"
+    and effectors_def: "effectors = get_effectors E exec_order"
+    and valid_event_seq: "valid_event_sequence exec_order snapshot (happensBeforeE E)"
+    and snapshot_valid: "valid_snapshot E snapshot"
+    and "i<i'"
+    and "i'<length effectors"
+  shows "uid \<noteq> uid'"
+proof -
+
+  from effectors_def have ???
+    apply (auto simp add: get_effectors_def get_effector_def)
+    sorry
+
+  show "uid \<noteq> uid' "
+    sorry
+qed
+
+text {* Show that effector_ref_dest_keys_assign uses unique identifiers for hb-relation: *}
+lemma effector_ref_dest_keys_assign_happensBefore:
+  assumes "get_effector E e = effector_ref_dest_keys_assign ref x uid oldUids"
+    and "get_effector E e' = effector_ref_dest_keys_assign ref x' uid' oldUids'"
+    and wf: "wellFormed_impl E"
+    and snapshot_valid: "valid_snapshot E snapshot"
+    and "e \<in>\<^sub>s snapshot"
+    and "e' \<in>\<^sub>s snapshot"
+    and "uid \<in> oldUids'"
+  shows "happensBeforeE E e e'"
+proof -
+
+
+  show "happensBeforeE E e e'"
+    sorry
+qed
+
+text {* Specification for dest_keys MV-register: *}
 lemma state_refs_dest_keys:
   assumes wf: "wellFormed_impl E"
     and state_def: "state = executeEffectors effectors initialState effector_impl"
     and effectors_def: "effectors = get_effectors E exec_order"
     and valid_event_seq: "valid_event_sequence exec_order snapshot (happensBeforeE E)"
     and snapshot_valid: "valid_snapshot E snapshot"
-    and r: "(state_refs state.[r]) = Some rState"
+    and r: "(state_refs state.[ref]) = Some rState"
   shows "dest_keys rState = {(x,uid) | x uid e_a oldUids. 
                  e_a \<in>\<^sub>s snapshot \<and> get_effector E e_a = effector_ref_dest_keys_assign ref x uid oldUids
-                \<and> (\<nexists>e_a' x' uid' oldUids'. (e_a happened before e_a' in E) \<and> e_a' \<in>\<^sub>s snapshot \<and> get_effector E e_a = effector_ref_dest_keys_assign ref x' uid' oldUids')}"
+                \<and> (\<nexists>e_a' x' uid' oldUids'. (e_a happened before e_a' in E) \<and> e_a' \<in>\<^sub>s snapshot \<and> get_effector E e_a' = effector_ref_dest_keys_assign ref x' uid' oldUids')}"
 proof auto
-  show  "\<exists>aa ba. (aa, ba) \<in>\<^sub>s snapshot \<and>
-                   (\<exists>oldUids. get_effector E (aa, ba) = effector_ref_dest_keys_assign ref x uid oldUids) \<and>
-                   (\<forall>a b. (a, b) \<in>\<^sub>s snapshot \<longrightarrow>
-                          ((aa, ba) happened before (a, b) in E) \<longrightarrow> (\<forall>x' uid' oldUids'. get_effector E (aa, ba) \<noteq> effector_ref_dest_keys_assign ref x' uid' oldUids'))"
+  show  "\<exists>e en. (e, en) \<in>\<^sub>s snapshot \<and>
+                   (\<exists>oldUids. get_effector E (e, en) = effector_ref_dest_keys_assign ref x uid oldUids) \<and>
+                   (\<forall>e' en'. (e', en') \<in>\<^sub>s snapshot \<longrightarrow>
+                          ((e, en) happened before (e', en') in E) \<longrightarrow> (\<forall>x' uid' oldUids'. get_effector E (e', en') \<noteq> effector_ref_dest_keys_assign ref x' uid' oldUids'))"
     if x: "(x, uid) \<in> dest_keys rState"
     for x uid
   proof -
+
+    text {* First argue on positions in effector list: *}
+
+    from x r state_def
+    have "\<exists>i<length effectors. \<exists>oldUids. effectors!i = effector_ref_dest_keys_assign ref x uid oldUids
+              \<and> (\<forall>j x' uid' oldUids'. j<length effectors \<and> i<j \<and> effectors!j = effector_ref_dest_keys_assign ref x' uid' oldUids' \<longrightarrow> uid \<notin> oldUids')"
+    proof (induct effectors arbitrary: rState state rule: rev_induct)
+      case Nil
+      then show ?case 
+        by (simp add: executeEffectors_def  initialState_def)
+    next
+      case (snoc eff effs)
+
+      define state_pre where state_pre_def: "state_pre \<equiv> executeEffectors effs initialState effector_impl"
+
+      show ?case 
+      proof (cases "\<exists>rState_pre. (state_refs state_pre .[ref]) = Some rState_pre \<and>  (x, uid) \<in> dest_keys rState_pre")
+        case True
+        from this obtain rState_pre 
+          where rState_pre_def: "(state_refs state_pre .[ref]) = Some rState_pre"
+            and x_pre: "(x, uid) \<in> dest_keys rState_pre"
+          by blast
+
+        from x_pre rState_pre_def 
+        have IH: "\<exists>i<length effs.
+           \<exists>oldUids. effs ! i = effector_ref_dest_keys_assign ref x uid oldUids \<and>
+                     (\<forall>j x' uid' oldUids'. j < length effs \<and> i < j \<and> effs ! j = effector_ref_dest_keys_assign ref x' uid' oldUids' \<longrightarrow> uid \<notin> oldUids')"
+          by (rule snoc.hyps, simp add: state_pre_def)
+
+        from this obtain i oldUids
+          where "i<length effs"
+            and "effs ! i = effector_ref_dest_keys_assign ref x uid oldUids"
+            and no_override: "\<And>j x' uid' oldUids'. \<lbrakk>j < length effs; i < j; effs ! j = effector_ref_dest_keys_assign ref x' uid' oldUids'\<rbrakk> \<Longrightarrow> uid \<notin> oldUids'"
+          by blast
+
+
+
+        show ?thesis 
+        proof (intro exI conjI allI impI; (elim conjE)?)
+          show "i < length (effs @ [eff])"
+            by (simp add: \<open>i < length effs\<close> less_SucI)
+
+          show "(effs @ [eff]) ! i = effector_ref_dest_keys_assign ref x uid oldUids"
+            by (simp add: \<open>effs ! i = effector_ref_dest_keys_assign ref x uid oldUids\<close> \<open>i < length effs\<close> nth_append)
+
+
+
+          show "uid \<notin> oldUids'"
+            if c0: "j < length (effs @ [eff])"
+              and c1: "i < j"
+              and c2: "(effs @ [eff]) ! j = effector_ref_dest_keys_assign ref x' uid' oldUids'"
+            for  j x' uid' oldUids'
+          proof (cases "j < length effs")
+            case True
+            text {* Trivial case, we know this from before. *}
+            thus ?thesis
+              by (metis c1 c2 no_override nth_append) 
+          next
+            case False
+            hence j: "j = length effs" using c0 by auto
+            hence eff: "eff = effector_ref_dest_keys_assign ref x' uid' oldUids'"
+              using c2 by auto
+
+
+            have state_step: "state = effector_impl eff state_pre"
+              by (auto simp add: `state = executeEffectors (effs @ [eff]) initialState effector_impl` state_pre_def executeEffectors_def)
+
+            (*from wf effectors_def valid_event_seq snapshot_valid*)
+            have "uid \<noteq> uid'"
+              using wf
+            proof (rule effector_ref_dest_keys_assign_unique_ids[OF `(effs @ [eff]) ! i = effector_ref_dest_keys_assign ref x uid oldUids`, OF c2])
+              show "effs @ [eff] = get_effectors E exec_order"
+                sorry (* TODO make arbitrary exec_order?*)
+              show "valid_event_sequence exec_order snapshot (happensBeforeE E)"
+                by (simp add: valid_event_seq)
+                
+              show "valid_snapshot E snapshot"
+                by (simp add: snapshot_valid)
+
+              show "i < j"
+                by (simp add: c1)
+              show "j < length (effs @ [eff])"
+                using c0 by blast
+            qed
+              find_theorems uid
+
+
+            show "uid \<notin> oldUids'"
+              using `(x, uid) \<in> dest_keys rState`
+                `(state_refs state .[ref]) = Some rState`
+              by (auto simp add: eff effector_impl_def s_update_ref_def state_step `uid \<noteq> uid'` split: if_splits)
+
+
+
+          qed
+
+      next
+        case False
+        text {*  *}
+
+
+        then show ?thesis sorry
+      qed
+
+
+        using snoc
+
+    qed
 
 
 
 
   qed
+
 
 lemma safety_inv1:
   assumes wf: "wellFormed_impl E"
