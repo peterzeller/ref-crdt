@@ -260,7 +260,7 @@ definition generator_impl :: generator_function where
 
 
 
-definition 
+definition wellFormed_impl :: "(operation, operation_result, operation_effector, state) execution \<Rightarrow> bool" where
 "wellFormed_impl execution \<equiv> wellFormed execution initialState generator_impl effector_impl localPrecondition_impl precondition_impl"
 
 section {* Test executions  *}
