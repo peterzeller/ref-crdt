@@ -321,15 +321,16 @@ How does the state depend on executed effectors (depending on snapshot)
 and which operations can generate which effectors... *}
 
 
-text {* For each effector_ref_dest_keys_assign, there exists a respective event, which produced the effector:  *} 
-(* TODO this lemma can be made more generic, so that it also works for other effects*)
-lemma effector_ref_dest_keys_assign_unique_ids:
-  assumes i: "effectors!i = effector_ref_dest_keys_assign ref x uid oldUids"
-    and wf: "wellFormed_impl E"
+
+lemma effector_uid_from_event:
+  assumes wf: "wellFormed_impl E"
     and effectors_def: "effectors = get_effectors E exec_order"
     and valid_event_seq: "valid_event_sequence exec_order snapshot (happensBeforeE E)"
     and snapshot_valid: "valid_snapshot E snapshot"
     and i'_len: "i<length effectors"
+    and uid_from_event: "\<And>eff e opr s uid . \<lbrakk>eff \<in> set (snd (generator_impl opr e s)); get_uid eff = Some uid\<rbrakk> 
+           \<Longrightarrow> uid = e"
+    and i: "get_uid (effectors!i) = Some uid"
   shows "\<exists>k. exec_order!i = (uid, k)"
 proof -
 
@@ -358,23 +359,20 @@ proof -
 
 
 
-  from i 
-  have "get_effector E (exec_order ! i) = effector_ref_dest_keys_assign ref x uid oldUids"
-    apply (auto simp add: effectors_def get_effectors_def )
-    by (metis effectors_def get_effectors_def i'_len length_map nth_map)
+  from i \<open>i < length exec_order\<close>
+  have "get_uid (get_effector E (exec_order ! i)) = Some uid"
+    by (auto simp add: effectors_def get_effectors_def)
 
-  hence effectors: "event_effectors (events E ![e]) ! k = effector_ref_dest_keys_assign ref x uid oldUids"
+  hence effectors: "get_uid (event_effectors (events E ![e]) ! k) = Some uid"
     by (auto simp add: get_effector_def e_def k_def)
 
-  hence eInfo_eff: "event_effectors eInfo ! k = effector_ref_dest_keys_assign ref x uid oldUids"
+  hence eInfo_eff: "get_uid (event_effectors eInfo ! k) = Some uid"
     by (simp add: eInfo_def)
 
   have "k < length (event_effectors eInfo)"
- (* TODO prove via valid snapshot*)
-    sorry
+    using snapshot_valid `k < snapshot_num snapshot e` apply (auto simp add: valid_snapshot_def fmap_entries_def split: option.splits)
+    by (metis eInfo_def fmlookup_dom'_iff le_trans less_Suc_eq_le not_less option.sel)
 
-  have eInfo_eff_set: "effector_ref_dest_keys_assign ref x uid oldUids \<in> set (event_effectors eInfo)"
-    using \<open>k < length (event_effectors eInfo)\<close> eInfo_eff in_set_conv_nth by fastforce
 
 
 
@@ -384,15 +382,45 @@ proof -
   have "event_effectors eInfo = snd (generator_impl (event_operation eInfo) e (event_state_pre eInfo))"
     using eInfo_def local.wf wellformed_generator by auto 
 
-  hence "uid = e"
-    using eInfo_eff_set
-    by (auto simp add: generator_impl_def compose_forward_def eInfo_eff return_def outref_update_def Let_def ref_dest_keys_assign_def 
-          inref_rev_refs_add_def inref_inuse_enable_def ref_reset_targets_def inref_rev_refs_remove_def skip_def
-          set_maps
-          split: operation.splits option.splits)
+  have "uid = e"
+  proof (rule uid_from_event)
+    show "event_effectors eInfo ! k \<in> set (snd (generator_impl (event_operation eInfo) e (event_state_pre eInfo)))"
+      using \<open>event_effectors eInfo = snd (generator_impl (event_operation eInfo) e (event_state_pre eInfo))\<close> \<open>k < length (event_effectors eInfo)\<close> by auto
+    show "get_uid (event_effectors eInfo ! k) = Some uid"
+      using eInfo_eff by auto
+  qed
   thus ?thesis
     by (simp add: \<open>exec_order ! i = (e, k)\<close>)
 qed
+
+
+text {* For each effector_ref_dest_keys_assign, there exists a respective event, which produced the effector:  *} 
+(* TODO this lemma can be made more generic, so that it also works for other effects*)
+lemma effector_ref_dest_keys_assign_unique_ids:
+  assumes i: "effectors!i = effector_ref_dest_keys_assign ref x uid oldUids"
+    and wf: "wellFormed_impl E"
+    and effectors_def: "effectors = get_effectors E exec_order"
+    and valid_event_seq: "valid_event_sequence exec_order snapshot (happensBeforeE E)"
+    and snapshot_valid: "valid_snapshot E snapshot"
+    and i'_len: "i<length effectors"
+  shows "\<exists>k. exec_order!i = (uid, k)"
+  using wf effectors_def valid_event_seq snapshot_valid i'_len
+proof (rule effector_uid_from_event)
+
+  show "(case (effectors ! i) of effector_ref_dest_keys_assign ref x uid oldUids \<Rightarrow> Some uid | _ \<Rightarrow> None) = Some uid"
+    using i by auto
+
+  show "uid = e"
+      if c0: "eff \<in> set (snd (generator_impl opr e s))"
+     and c1: "(case eff of effector_ref_dest_keys_assign ref x uid oldUids \<Rightarrow> Some uid | _ \<Rightarrow> None ) = Some uid"
+     for  eff e opr s uid
+    using that by (auto simp add: 
+        generator_impl_def compose_forward_def  return_def outref_update_def Let_def ref_dest_keys_assign_def 
+          inref_rev_refs_add_def inref_inuse_enable_def ref_reset_targets_def inref_rev_refs_remove_def skip_def
+          set_maps
+          split: operation.splits option.splits)
+qed
+
 
 
 text {* Show that effector_ref_dest_keys_assign uses unique identifiers: *}
